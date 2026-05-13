@@ -123,8 +123,8 @@ eFab is a recipe repo — most contributions belong upstream:
 - A profile that fails to build, a missing pin, a missing smoke test, or
   a new profile request → file *here*.
 
-See [`CONTRIBUTING.md`](https://github.com/embeddedos-org/.github/blob/main/CONTRIBUTING.md)
-for the org-wide contribution guide.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) (this repo) for stack/manifest contributions.
+For changes inside an upstream product, follow that product's own `CONTRIBUTING.md`.
 
 ## License
 

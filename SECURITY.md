@@ -22,9 +22,10 @@ a public issue for an in-scope vulnerability.
 
 [private security advisory]: https://github.com/embeddedos-org/eFab/security/advisories/new
 
-We aim to acknowledge within 5 working days. Coordinated disclosure
-follows the org-wide policy at
-<https://github.com/embeddedos-org/.github/blob/main/SECURITY.md>.
+We aim to acknowledge within 5 working days. Coordinated disclosure follows
+the policy in this repo's [`SECURITY.md`](SECURITY.md) (this file) plus the
+upstream product's own `SECURITY.md` for any vulnerability that originates
+in eAI / eIPC / eNI source.
 
 ## Supply-chain hygiene
 
