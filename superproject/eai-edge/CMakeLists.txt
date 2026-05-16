@@ -12,7 +12,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(eFab_eai_edge
         LANGUAGES C CXX
-        VERSION   0.1.0
+        VERSION   3.0.0
         DESCRIPTION "EmbeddedOS — eai-edge profile (ENI + EIPC + eAI superproject)"
         HOMEPAGE_URL "https://embeddedos-org.github.io/stacks/eai-edge.html")
 
@@ -20,9 +20,9 @@ project(eFab_eai_edge
 # Version pins (defaults match manifests/eai-edge.yml)
 # ---------------------------------------------------------------------------
 
-set(EFAB_PIN_ENI  "v0.1.0" CACHE STRING "eNI tag/branch to fetch")
-set(EFAB_PIN_EIPC "v0.1.0" CACHE STRING "eIPC tag/branch to fetch")
-set(EFAB_PIN_EAI  "v0.1.0" CACHE STRING "eAI tag/branch to fetch")
+set(EFAB_PIN_ENI  "v3.0.0" CACHE STRING "eNI tag/branch to fetch")
+set(EFAB_PIN_EIPC "v3.0.0" CACHE STRING "eIPC tag/branch to fetch")
+set(EFAB_PIN_EAI  "v3.0.0" CACHE STRING "eAI tag/branch to fetch")
 
 option(EFAB_BUILD_TESTS "Build the eai-edge integration smoke test driver" ON)
 
