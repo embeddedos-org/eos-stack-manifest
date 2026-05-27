@@ -23,7 +23,7 @@ We continuously benchmark eFab — Stack Fabricator against the entire EmbeddedO
 
 ---
 
-## 🎬 Product Marketing Video
+## 🎬 Product Marketing Video (App Store Proof of Production)
 
 Experience eFab — Stack Fabricator in action! Watch our high-fidelity product demonstration and marketing video:
 
