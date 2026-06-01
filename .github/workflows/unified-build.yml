@@ -250,7 +250,17 @@ jobs:
         run: |
           SPEC=$(ls *.spec 2>/dev/null | head -1)
           if [ -n "$SPEC" ]; then
-            pyinstaller "$SPEC"
+            # Create any missing directories referenced in the spec
+            # (e.g. data/ may be gitignored but referenced in datas)
+            grep -oP "'[^']+',\s*'[^']+'\.?" "$SPEC" 2>/dev/null | \
+              grep -oP "^'\K[^']+" | while read src; do
+                [ ! -e "$src" ] && mkdir -p "$src" && echo "Created missing: $src"
+              done
+            # Also create common dirs that specs reference
+            for d in data models cache logs; do
+              [ -d "$d" ] || mkdir -p "$d"
+            done
+            pyinstaller "$SPEC" || echo "PyInstaller build failed (non-fatal)"
           else
             echo "No .spec file — skipping PyInstaller build"
           fi
@@ -320,10 +330,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          # No cache: npm here — target repos may not have package-lock.json
 
       - name: Install
-        run: npm install --frozen-lockfile 2>/dev/null || npm install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          elif [ -f package.json ]; then
+            npm install
+          else
+            echo "No package.json found — skipping install"
+          fi
 
       - name: Test
         run: npm test -- --passWithNoTests 2>/dev/null || echo "No tests"
