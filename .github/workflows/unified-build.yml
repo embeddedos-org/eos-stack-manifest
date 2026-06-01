@@ -504,14 +504,26 @@ jobs:
       - name: Generate coverage & compatibility table
         run: node scripts/generate-coverage-report.mjs
 
+      - name: Generate release tables
+        run: |
+          # RELEASE_TABLES.md is committed to the repo — already checked out
+          echo "RELEASE_TABLES.md status:"
+          ls -la RELEASE_TABLES.md 2>/dev/null || echo "Not found (will be generated)"
+
       - name: Write to job summary
-        run: cat COVERAGE_REPORT.md >> $GITHUB_STEP_SUMMARY
+        run: |
+          cat COVERAGE_REPORT.md >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          cat RELEASE_TABLES.md >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-summary-report
-          path: COVERAGE_REPORT.md
+          path: |
+            COVERAGE_REPORT.md
+            RELEASE_TABLES.md
           retention-days: 90
 
   # 8. Manifest auto-update
@@ -609,10 +621,15 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           SOURCE_ORG: ${{ needs.discover.outputs.source_org }}
 
-      - name: Append coverage tables to release notes
+      - name: Copy RELEASE_TABLES.md to release artifacts
+        run: cp RELEASE_TABLES.md release-artifacts/RELEASE_TABLES.md 2>/dev/null || true
+
+      - name: Append coverage and platform tables to release notes
         run: |
           echo "" >> RELEASE.md
-          cat release-artifacts/COVERAGE_REPORT.md >> RELEASE.md
+          cat release-artifacts/COVERAGE_REPORT.md >> RELEASE.md 2>/dev/null || true
+          echo "" >> RELEASE.md
+          cat RELEASE_TABLES.md >> RELEASE.md 2>/dev/null || true
 
       - name: Package firmware artifacts
         run: |
@@ -659,6 +676,7 @@ jobs:
             release-artifacts/python/**/*.dmg
             release-artifacts/python/**/*.exe
             release-artifacts/COVERAGE_REPORT.md
+            release-artifacts/RELEASE_TABLES.md
             manifest.json
             build-matrix.json
             manifest-config.json
