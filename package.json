@@ -1,0 +1,26 @@
+{
+  "name": "eos-stack-manifest",
+  "version": "1.0.0",
+  "description": "EmbeddedOS unified build chain manifest — CI/CD for all embeddedos-org repos",
+  "type": "module",
+  "scripts": {
+    "discover": "node scripts/discover.mjs",
+    "discover:dry": "node scripts/discover.mjs --dry-run",
+    "validate": "node scripts/validate-schema.mjs",
+    "stats": "node scripts/stats.mjs",
+    "release-docs": "node scripts/generate-release-docs.mjs",
+    "test": "node scripts/validate-schema.mjs && node scripts/stats.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "embeddedos",
+    "manifest",
+    "ci-cd",
+    "build-matrix",
+    "monorepo"
+  ],
+  "license": "MIT",
+  "dependencies": {}
+}
