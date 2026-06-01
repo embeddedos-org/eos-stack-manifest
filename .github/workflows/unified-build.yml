@@ -1,17 +1,9 @@
-name: EoS Stack — Unified Build, Test & Release
+name: EoS Stack -- Unified Build, Test & Release
 
-# ─────────────────────────────────────────────────────────────────────────────
 # HOW FORK SUPPORT WORKS
-# ─────────────────────────────────────────────────────────────────────────────
 # 1. Fork this repo to any GitHub org (e.g. my-company/eos-stack-manifest)
-# 2. Edit manifest-config.json → set "source_org" to your org name
-#    OR set "override_org" to build from a completely different org
-# 3. Push — the workflow reads source_org at runtime, never hardcodes it
-#
-# To build from the ORIGINAL embeddedos-org repos without forking those repos:
-#   Set "source_org": "embeddedos-org" in manifest-config.json
-#   Add GH_TOKEN secret with read access to embeddedos-org repos
-# ─────────────────────────────────────────────────────────────────────────────
+# 2. Edit manifest-config.json -> set "source_org" to your org name
+# 3. Push -- the workflow reads source_org at runtime, never hardcodes it
 
 on:
   push:
@@ -38,7 +30,7 @@ on:
         required: false
         default: ''
       dry_run:
-        description: 'Dry run — discover only, no builds'
+        description: 'Dry run -- discover only, no builds'
         required: false
         default: 'false'
       release:
@@ -63,7 +55,7 @@ env:
 
 jobs:
 
-  # ── 1. Resolve source org & validate manifest ───────────────────────────────
+  # 1. Resolve source org & validate manifest
   discover:
     name: Discover & Validate Manifest
     runs-on: ubuntu-latest
@@ -89,10 +81,7 @@ jobs:
           if [ -n "$OVERRIDE" ]; then
             echo "source_org=$OVERRIDE" >> $GITHUB_OUTPUT
           else
-            ORG=$(node -e "
-              const cfg = JSON.parse(require('fs').readFileSync('manifest-config.json','utf8'));
-              console.log(cfg.override_org || cfg.source_org || 'embeddedos-org');
-            ")
+            ORG=$(node scripts/resolve-org.mjs)
             echo "source_org=$ORG" >> $GITHUB_OUTPUT
           fi
 
@@ -123,30 +112,25 @@ jobs:
               python   = python.filter(r => tierRepos.includes(r));
               web      = web.filter(r => tierRepos.includes(r));
             }
-            const total = firmware.length + python.length + web.length + 2; // +go +hardware
+            const total = firmware.length + python.length + web.length + 2;
             core.setOutput('matrix_firmware', JSON.stringify({ include: firmware.map(r => ({ repo: r })) }));
             core.setOutput('matrix_python',   JSON.stringify({ include: python.map(r => ({ repo: r })) }));
             core.setOutput('matrix_web',      JSON.stringify({ include: web.map(r => ({ repo: r })) }));
             core.setOutput('total', String(total));
-            console.log(`Firmware: ${firmware.join(', ')}`);
-            console.log(`Python:   ${python.join(', ')}`);
-            console.log(`Web:      ${web.join(', ')}`);
-            console.log(`Total repos: ${total}`);
+            console.log('Firmware: ' + firmware.join(', '));
+            console.log('Python:   ' + python.join(', '));
+            console.log('Web:      ' + web.join(', '));
 
       - name: Print fork info
         run: |
-          echo "============================================"
-          echo "  EoS Stack Manifest — Fork Info"
-          echo "============================================"
-          echo "  Manifest repo  : ${{ github.repository }}"
-          echo "  Source org     : ${{ steps.resolve-org.outputs.source_org }}"
-          echo "  Triggered by   : ${{ github.event_name }}"
-          echo "  Ref            : ${{ github.ref }}"
-          echo "============================================"
+          echo "Manifest repo  : ${{ github.repository }}"
+          echo "Source org     : ${{ steps.resolve-org.outputs.source_org }}"
+          echo "Triggered by   : ${{ github.event_name }}"
+          echo "Ref            : ${{ github.ref }}"
 
-  # ── 2. Firmware / C / CMake builds ─────────────────────────────────────────
+  # 2. Firmware / C / CMake builds
   build-firmware:
-    name: Build Firmware — ${{ matrix.repo }}
+    name: Build Firmware -- ${{ matrix.repo }}
     needs: discover
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -155,7 +139,7 @@ jobs:
       matrix:
         repo: [eos, eBoot, eAI, eosllm, ebuild, eNI, HEALTH-BAND-Neuro]
     steps:
-      - name: Checkout ${{ matrix.repo }} from ${{ needs.discover.outputs.source_org }}
+      - name: Checkout ${{ matrix.repo }}
         uses: actions/checkout@v4
         with:
           repository: ${{ needs.discover.outputs.source_org }}/${{ matrix.repo }}
@@ -165,12 +149,10 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y cmake build-essential gcc-arm-none-eabi binutils-arm-none-eabi \
-            openssl libssl-dev ninja-build lcov gcovr
+          sudo apt-get install -y cmake build-essential gcc-arm-none-eabi binutils-arm-none-eabi openssl libssl-dev ninja-build lcov gcovr
 
       - name: Configure
         run: |
-          # Find CMakeLists.txt — may be in root or a subdirectory (e.g. firmware/)
           if [ -f CMakeLists.txt ]; then
             CMAKE_SRC="."
           elif [ -f firmware/CMakeLists.txt ]; then
@@ -180,66 +162,43 @@ jobs:
           else
             CMAKE_SRC=""
           fi
-
           if [ -n "$CMAKE_SRC" ]; then
-            # Create stub source files for any missing .c files referenced in CMakeLists
             pushd "$CMAKE_SRC" > /dev/null
-            grep -rE '\bsrc/[a-zA-Z0-9_/]+\.c\b' CMakeLists.txt tests/CMakeLists.txt 2>/dev/null | \
-              grep -oE 'src/[a-zA-Z0-9_/]+\.c' | sort -u | while read f; do
-                if [ ! -f "$f" ]; then
-                  mkdir -p "$(dirname $f)"
-                  echo "/* stub */" > "$f"
-                  echo "Created stub: $f"
-                fi
-              done
+            grep -rE '\bsrc/[a-zA-Z0-9_/]+\.c\b' CMakeLists.txt tests/CMakeLists.txt 2>/dev/null | grep -oE 'src/[a-zA-Z0-9_/]+\.c' | sort -u | while read f; do
+              if [ ! -f "$f" ]; then mkdir -p "$(dirname $f)"; echo "/* stub */" > "$f"; fi
+            done
             popd > /dev/null
-            cmake -S "$CMAKE_SRC" -B build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_C_FLAGS="--coverage" \
-              -G Ninja 2>/dev/null || \
-            cmake -S "$CMAKE_SRC" -B build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_C_FLAGS="--coverage" || \
-            { echo "CMake configure failed (non-fatal)"; echo "NO_BUILD=1" >> $GITHUB_ENV; }
+            cmake -S "$CMAKE_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="--coverage" -G Ninja 2>/dev/null || cmake -S "$CMAKE_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="--coverage" || { echo "CMake configure failed (non-fatal)"; echo "NO_BUILD=1" >> $GITHUB_ENV; }
             echo "CMAKE_SRC=$CMAKE_SRC" >> $GITHUB_ENV
           elif [ -f Makefile ] || [ -f GNUmakefile ]; then
-            echo "No CMakeLists.txt found — will use Makefile"
             echo "USE_MAKE=1" >> $GITHUB_ENV
           else
-            echo "No build system found — skipping"
             echo "NO_BUILD=1" >> $GITHUB_ENV
           fi
 
       - name: Build
         run: |
-          if [ "$NO_BUILD" = "1" ]; then
-            echo "Skipping build (no build system or configure failed)"
-          elif [ "$USE_MAKE" = "1" ]; then
-            make all -j$(nproc) || make -j$(nproc) || echo "Make build failed (non-fatal)"
-          else
-            cmake --build build --config Release -j$(nproc) || echo "CMake build failed (non-fatal)"
+          if [ "$NO_BUILD" = "1" ]; then echo "Skipping build"
+          elif [ "$USE_MAKE" = "1" ]; then make all -j$(nproc) || make -j$(nproc) || echo "Make build failed (non-fatal)"
+          else cmake --build build --config Release -j$(nproc) || echo "CMake build failed (non-fatal)"
           fi
 
       - name: Test & Coverage
         run: |
-          if [ "$NO_BUILD" = "1" ]; then
-            echo "Skipping tests"
-          elif [ "$USE_MAKE" = "1" ]; then
-            make test 2>/dev/null || echo "No test target defined"
-          else
-            cmake --build build --target test 2>/dev/null || echo "No test target defined"
+          if [ "$NO_BUILD" = "1" ]; then echo "Skipping tests"
+          elif [ "$USE_MAKE" = "1" ]; then make test 2>/dev/null || echo "No test target"
+          else cmake --build build --target test 2>/dev/null || echo "No test target"
           fi
-          # Generate lcov coverage report if gcov data exists
           if find . -name "*.gcda" 2>/dev/null | grep -q .; then
             lcov --capture --directory . --output-file coverage.info --ignore-errors mismatch 2>/dev/null || true
             lcov --remove coverage.info '/usr/*' '*/tests/*' --output-file coverage.info 2>/dev/null || true
             genhtml coverage.info --output-directory coverage-html 2>/dev/null || true
             gcovr --xml-pretty --output coverage.xml 2>/dev/null || true
-            echo "## Coverage — ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
-            gcovr --print-summary 2>/dev/null | tee -a $GITHUB_STEP_SUMMARY || echo "Coverage data collected"
+            echo "## Coverage -- ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
+            gcovr --print-summary 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "Coverage collected" >> $GITHUB_STEP_SUMMARY
           else
-            echo "## Coverage — ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
-            echo "No gcov data found — coverage not available for this build" >> $GITHUB_STEP_SUMMARY
+            echo "## Coverage -- ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
+            echo "No gcov data found" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Upload build artifacts
@@ -256,7 +215,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-      - name: Upload coverage report
+      - name: Upload coverage
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -268,9 +227,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # ── 3. Python / Backend builds ─────────────────────────────────────────────
+  # 3. Python / Backend builds
   build-python:
-    name: Build Python — ${{ matrix.repo }}
+    name: Build Python -- ${{ matrix.repo }}
     needs: discover
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -279,7 +238,7 @@ jobs:
       matrix:
         repo: [eDB, EoSim, EoStudio, eVera]
     steps:
-      - name: Checkout ${{ matrix.repo }} from ${{ needs.discover.outputs.source_org }}
+      - name: Checkout ${{ matrix.repo }}
         uses: actions/checkout@v4
         with:
           repository: ${{ needs.discover.outputs.source_org }}/${{ matrix.repo }}
@@ -298,42 +257,14 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          # Run with coverage — use .coveragerc if present (fail_under=100 is set there)
           if [ -f .coveragerc ]; then
-            pytest --tb=short -q \
-              --cov=. \
-              --cov-report=xml:coverage.xml \
-              --cov-report=html:coverage-html \
-              --cov-report=term-missing \
-              --cov-config=.coveragerc \
-              2>/dev/null || echo "Tests completed (some may have failed)"
+            pytest --tb=short -q --cov=. --cov-report=xml:coverage.xml --cov-report=html:coverage-html --cov-report=term-missing --cov-config=.coveragerc 2>/dev/null || echo "Tests completed"
           else
-            pytest --tb=short -q \
-              --cov=. \
-              --cov-report=xml:coverage.xml \
-              --cov-report=html:coverage-html \
-              --cov-report=term-missing \
-              2>/dev/null || echo "No tests found"
+            pytest --tb=short -q --cov=. --cov-report=xml:coverage.xml --cov-report=html:coverage-html --cov-report=term-missing 2>/dev/null || echo "No tests found"
           fi
-          # Write coverage summary to job summary
-          echo "## Test Coverage — ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Coverage -- ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
           if [ -f coverage.xml ]; then
-            python3 -c "
-import xml.etree.ElementTree as ET
-try:
-    tree = ET.parse('coverage.xml')
-    root = tree.getroot()
-    rate = float(root.attrib.get('line-rate', 0)) * 100
-    branch = float(root.attrib.get('branch-rate', 0)) * 100
-    print(f'| Metric | Value |')
-    print(f'|--------|-------|')
-    print(f'| Line Coverage | {rate:.1f}% |')
-    print(f'| Branch Coverage | {branch:.1f}% |')
-    status = '✅ 100%' if rate >= 100 else f'⚠️ {rate:.1f}%'
-    print(f'| Status | {status} |')
-except Exception as e:
-    print(f'Coverage XML parse error: {e}')
-" >> $GITHUB_STEP_SUMMARY
+            python3 scripts/parse-coverage.py >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Coverage parse failed" >> $GITHUB_STEP_SUMMARY
           else
             echo "No coverage data generated" >> $GITHUB_STEP_SUMMARY
           fi
@@ -342,18 +273,13 @@ except Exception as e:
         run: |
           SPEC=$(ls *.spec 2>/dev/null | head -1)
           if [ -n "$SPEC" ]; then
-            # Create any missing directories referenced in the spec
-            grep -oP "'[^']+',\s*'[^']+'" "$SPEC" 2>/dev/null | \
-              grep -oP "^'\K[^']+" | while read src; do
-                [ ! -e "$src" ] && mkdir -p "$src" && echo "Created missing: $src"
-              done
-            # Also create common dirs that specs reference
-            for d in data models cache logs; do
-              [ -d "$d" ] || mkdir -p "$d"
+            grep -oP "'[^']+',\s*'[^']+'" "$SPEC" 2>/dev/null | grep -oP "^'\K[^']+" | while read src; do
+              [ ! -e "$src" ] && mkdir -p "$src" && echo "Created missing: $src"
             done
+            for d in data models cache logs; do [ -d "$d" ] || mkdir -p "$d"; done
             pyinstaller "$SPEC" || echo "PyInstaller build failed (non-fatal)"
           else
-            echo "No .spec file — skipping PyInstaller build"
+            echo "No .spec file -- skipping PyInstaller build"
           fi
 
       - name: Upload build artifacts
@@ -364,7 +290,7 @@ except Exception as e:
           if-no-files-found: warn
           retention-days: 90
 
-      - name: Upload coverage report
+      - name: Upload coverage
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -376,14 +302,14 @@ except Exception as e:
           if-no-files-found: ignore
           retention-days: 30
 
-  # ── 4. Go builds ────────────────────────────────────────────────────────────
+  # 4. Go builds
   build-go:
-    name: Build Go — eIPC
+    name: Build Go -- eIPC
     needs: discover
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run != 'true' }}
     steps:
-      - name: Checkout eIPC from ${{ needs.discover.outputs.source_org }}
+      - name: Checkout eIPC
         uses: actions/checkout@v4
         with:
           repository: ${{ needs.discover.outputs.source_org }}/eIPC
@@ -401,35 +327,29 @@ except Exception as e:
       - name: Test with coverage
         run: |
           if [ -f go.mod ]; then
+            mkdir -p coverage-html
             go test ./... -v -coverprofile=coverage.out -covermode=atomic 2>/dev/null || echo "Tests completed"
             go tool cover -html=coverage.out -o coverage-html/index.html 2>/dev/null || true
-            # Coverage summary
-            echo "## Test Coverage — eIPC (Go)" >> $GITHUB_STEP_SUMMARY
+            echo "## Test Coverage -- eIPC (Go)" >> $GITHUB_STEP_SUMMARY
             echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
             echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
             COV=$(go tool cover -func=coverage.out 2>/dev/null | grep total | awk '{print $3}' || echo "N/A")
             echo "| Total Coverage | $COV |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "No go.mod — skipping tests"
+            echo "No go.mod -- skipping tests"
           fi
 
       - name: Build binaries (multi-platform)
         run: |
           if [ -f go.mod ]; then
             mkdir -p dist
-            # Linux AMD64
-            GOOS=linux GOARCH=amd64 go build -o dist/eipc-linux-amd64 ./cmd/... 2>/dev/null || \
-            GOOS=linux GOARCH=amd64 go build -o dist/eipc-linux-amd64 . 2>/dev/null || \
-            echo "Go build failed (non-fatal)"
-            # Linux ARM64
-            GOOS=linux GOARCH=arm64 go build -o dist/eipc-linux-arm64 ./cmd/... 2>/dev/null || true
-            # Windows
+            GOOS=linux   GOARCH=amd64 go build -o dist/eipc-linux-amd64   ./cmd/... 2>/dev/null || GOOS=linux   GOARCH=amd64 go build -o dist/eipc-linux-amd64   . 2>/dev/null || echo "Linux amd64 build failed"
+            GOOS=linux   GOARCH=arm64 go build -o dist/eipc-linux-arm64   ./cmd/... 2>/dev/null || true
             GOOS=windows GOARCH=amd64 go build -o dist/eipc-windows-amd64.exe ./cmd/... 2>/dev/null || true
-            # macOS
-            GOOS=darwin GOARCH=amd64 go build -o dist/eipc-darwin-amd64 ./cmd/... 2>/dev/null || true
+            GOOS=darwin  GOARCH=amd64 go build -o dist/eipc-darwin-amd64  ./cmd/... 2>/dev/null || true
             ls -lh dist/ || true
           else
-            echo "No go.mod — skipping build"
+            echo "No go.mod -- skipping build"
           fi
 
       - name: Upload build artifacts
@@ -451,9 +371,9 @@ except Exception as e:
           if-no-files-found: ignore
           retention-days: 30
 
-  # ── 5. Web / TypeScript builds ──────────────────────────────────────────────
+  # 5. Web / TypeScript builds
   build-web:
-    name: Build Web — ${{ matrix.repo }}
+    name: Build Web -- ${{ matrix.repo }}
     needs: discover
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -462,7 +382,7 @@ except Exception as e:
       matrix:
         repo: [eApps, www.embeddedos.org, eOffice, HealthKey-Ulta]
     steps:
-      - name: Checkout ${{ matrix.repo }} from ${{ needs.discover.outputs.source_org }}
+      - name: Checkout ${{ matrix.repo }}
         uses: actions/checkout@v4
         with:
           repository: ${{ needs.discover.outputs.source_org }}/${{ matrix.repo }}
@@ -472,45 +392,23 @@ except Exception as e:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          # No cache: npm here — target repos may not have package-lock.json
 
       - name: Install
         run: |
           if [ -f yarn.lock ]; then
             yarn install --frozen-lockfile 2>/dev/null || yarn install
           elif [ -f package.json ]; then
-            # Use npm install (not ci) — lock files in target repos may be out of sync
             npm install
           else
-            echo "No package.json found — skipping install"
+            echo "No package.json -- skipping install"
           fi
 
       - name: Test with coverage
         run: |
           if [ -f package.json ]; then
-            # Try coverage script first, then plain test
-            npm run test:coverage 2>/dev/null || \
-            npm run test:unit -- --coverage 2>/dev/null || \
-            npm test -- --coverage --passWithNoTests 2>/dev/null || \
-            npm test -- --passWithNoTests 2>/dev/null || \
-            echo "No tests"
-
-            # Write coverage summary
-            echo "## Test Coverage — ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
-            if [ -f coverage/coverage-summary.json ]; then
-              node -e "
-const c = require('./coverage/coverage-summary.json').total;
-console.log('| Metric | Value |');
-console.log('|--------|-------|');
-console.log('| Lines | ' + c.lines.pct + '% (' + c.lines.covered + '/' + c.lines.total + ') |');
-console.log('| Branches | ' + c.branches.pct + '% (' + c.branches.covered + '/' + c.branches.total + ') |');
-console.log('| Functions | ' + c.functions.pct + '% (' + c.functions.covered + '/' + c.functions.total + ') |');
-const ok = c.lines.pct >= 100;
-console.log('| Status | ' + (ok ? '✅ 100%' : '⚠️ ' + c.lines.pct + '%') + ' |');
-" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Coverage summary not available" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "No coverage data generated" >> $GITHUB_STEP_SUMMARY
-            fi
+            npm run test:coverage 2>/dev/null || npm run test:unit -- --coverage 2>/dev/null || npm test -- --coverage --passWithNoTests 2>/dev/null || npm test -- --passWithNoTests 2>/dev/null || echo "No tests"
+            echo "## Test Coverage -- ${{ matrix.repo }}" >> $GITHUB_STEP_SUMMARY
+            node scripts/parse-web-coverage.mjs >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Coverage summary not available" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Build
@@ -532,19 +430,18 @@ console.log('| Status | ' + (ok ? '✅ 100%' : '⚠️ ' + c.lines.pct + '%') + 
         if: always()
         with:
           name: coverage-web-${{ matrix.repo }}
-          path: |
-            coverage/
+          path: coverage/
           if-no-files-found: ignore
           retention-days: 30
 
-  # ── 6. Hardware / KiCad builds ─────────────────────────────────────────────
+  # 6. Hardware / KiCad builds
   build-hardware:
-    name: Build Hardware — eCAD
+    name: Build Hardware -- eCAD
     needs: discover
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run != 'true' }}
     steps:
-      - name: Checkout eCAD-Hardware-Products from ${{ needs.discover.outputs.source_org }}
+      - name: Checkout eCAD-Hardware-Products
         uses: actions/checkout@v4
         with:
           repository: ${{ needs.discover.outputs.source_org }}/eCAD-Hardware-Products
@@ -558,7 +455,7 @@ console.log('| Status | ' + (ok ? '✅ 100%' : '⚠️ ' + c.lines.pct + '%') + 
       - name: Install KiCad tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y kicad python3-kicad 2>/dev/null || echo "KiCad not available in CI — skipping"
+          sudo apt-get install -y kicad python3-kicad 2>/dev/null || echo "KiCad not available in CI"
           pip install kicad-python 2>/dev/null || true
 
       - name: Run DRC checks
@@ -578,7 +475,7 @@ console.log('| Status | ' + (ok ? '✅ 100%' : '⚠️ ' + c.lines.pct + '%') + 
           if-no-files-found: warn
           retention-days: 90
 
-  # ── 7. Coverage Summary Job ─────────────────────────────────────────────────
+  # 7. Coverage Summary & Release Table
   coverage-summary:
     name: Coverage Summary & Release Table
     needs:
@@ -605,147 +502,7 @@ console.log('| Status | ' + (ok ? '✅ 100%' : '⚠️ ' + c.lines.pct + '%') + 
           merge-multiple: false
 
       - name: Generate coverage & compatibility table
-        run: |
-          node -e "
-const fs = require('fs');
-const path = require('path');
-const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
-const date = new Date().toISOString().split('T')[0];
-
-// ── Coverage parsing helpers ──────────────────────────────────────────────
-function parsePythonCoverage(dir) {
-  const xmlPath = path.join(dir, 'coverage.xml');
-  if (!fs.existsSync(xmlPath)) return null;
-  const xml = fs.readFileSync(xmlPath, 'utf8');
-  const lineMatch = xml.match(/line-rate=\"([0-9.]+)\"/);
-  const branchMatch = xml.match(/branch-rate=\"([0-9.]+)\"/);
-  if (!lineMatch) return null;
-  return {
-    lines: (parseFloat(lineMatch[1]) * 100).toFixed(1),
-    branches: branchMatch ? (parseFloat(branchMatch[1]) * 100).toFixed(1) : 'N/A',
-  };
-}
-
-function parseGoCoverage(dir) {
-  const outPath = path.join(dir, 'coverage.out');
-  if (!fs.existsSync(outPath)) return null;
-  const lines = fs.readFileSync(outPath, 'utf8').split('\n');
-  const total = lines.find(l => l.includes('total:'));
-  if (!total) return null;
-  const pct = total.match(/([0-9.]+)%/);
-  return pct ? { lines: pct[1], branches: 'N/A' } : null;
-}
-
-// ── Build summary table ───────────────────────────────────────────────────
-const lines = [];
-lines.push('# EoS Stack — Build & Coverage Report');
-lines.push('');
-lines.push('> Generated: ' + date + ' | Source: [embeddedos-org](https://github.com/embeddedos-org)');
-lines.push('');
-lines.push('---');
-lines.push('');
-lines.push('## Build Status & Test Coverage');
-lines.push('');
-lines.push('| Repo | Platform | Language | Tier | Line Cov | Branch Cov | Status |');
-lines.push('|------|----------|----------|------|----------|------------|--------|');
-
-for (const p of manifest.projects.filter(x => x.platform !== 'meta')) {
-  let cov = null;
-  const covDirs = [
-    'all-coverage/coverage-python-' + p.name,
-    'all-coverage/coverage-go-' + p.name,
-    'all-coverage/coverage-firmware-' + p.name,
-    'all-coverage/coverage-web-' + p.name,
-  ];
-  for (const d of covDirs) {
-    if (fs.existsSync(d)) {
-      if (d.includes('python')) cov = parsePythonCoverage(d);
-      else if (d.includes('go')) cov = parseGoCoverage(d);
-      else if (d.includes('firmware')) cov = parsePythonCoverage(d); // gcovr xml
-      if (cov) break;
-    }
-  }
-  const linePct = cov ? cov.lines + '%' : '—';
-  const branchPct = cov ? cov.branches + '%' : '—';
-  const status = cov ? (parseFloat(cov.lines) >= 100 ? '✅ 100%' : '⚠️ ' + cov.lines + '%') : '🔄 Built';
-  lines.push('| [' + p.name + '](https://github.com/' + p.repo + ') | ' + p.platform + ' | ' + (p.language || '—') + ' | ' + p.tier + ' | ' + linePct + ' | ' + branchPct + ' | ' + status + ' |');
-}
-
-lines.push('');
-lines.push('---');
-lines.push('');
-
-// ── Compatibility Matrix ──────────────────────────────────────────────────
-lines.push('## Compatibility Matrix');
-lines.push('');
-lines.push('### Firmware — Target Hardware');
-lines.push('');
-lines.push('| Firmware | MCU / SoC | Architecture | Toolchain | OS Support |');
-lines.push('|----------|-----------|--------------|-----------|------------|');
-lines.push('| eos | ARM Cortex-M4/M7, RISC-V | ARMv7-M, RV32 | arm-none-eabi-gcc, riscv32-gcc | Bare-metal |');
-lines.push('| eBoot | Any ARM Cortex-M | ARMv7-M | arm-none-eabi-gcc | Bare-metal |');
-lines.push('| eAI | ARM Cortex-M55, Cortex-A | ARMv8.1-M, ARMv8-A | arm-none-eabi-gcc | eos RTOS, Linux |');
-lines.push('| eosllm | ARM Cortex-M7+ | ARMv7E-M | arm-none-eabi-gcc | eos RTOS |');
-lines.push('| eNI | ARM Cortex-M4 | ARMv7-M | arm-none-eabi-gcc | eos RTOS |');
-lines.push('| ebuild | Host (cross-compile) | x86_64, ARM | GCC/Clang | Linux, macOS, Windows |');
-lines.push('| HEALTH-BAND-Neuro | Nordic nRF52840 | ARM Cortex-M4F | arm-none-eabi-gcc | Zephyr RTOS |');
-lines.push('');
-lines.push('### Software — Host Platform Compatibility');
-lines.push('');
-lines.push('| App | Linux | macOS | Windows | Android | iOS | Web | Node.js | Python |');
-lines.push('|-----|-------|-------|---------|---------|-----|-----|---------|--------|');
-lines.push('| eVera | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | 3.10+ |');
-lines.push('| EoStudio | ✅ | ✅ | ✅ | — | — | — | — | 3.10+ |');
-lines.push('| EoSim | ✅ | ✅ | ✅ | — | — | — | — | 3.10+ |');
-lines.push('| eDB | ✅ | ✅ | ✅ | — | — | ✅ | 22+ | 3.12+ |');
-lines.push('| eOffice | ✅ | ✅ | ✅ | — | — | ✅ | 22+ | — |');
-lines.push('| eApps | ✅ | ✅ | ✅ | — | — | ✅ | 22+ | — |');
-lines.push('| HealthKey-Ulta | — | — | — | ✅ | ✅ | ✅ | — | — |');
-lines.push('| www.embeddedos.org | ✅ | ✅ | ✅ | — | — | ✅ | 22+ | — |');
-lines.push('| eIPC | ✅ | ✅ | ✅ | — | — | — | — | — |');
-lines.push('');
-lines.push('### Runtime Dependencies');
-lines.push('');
-lines.push('| Component | Min Version | Notes |');
-lines.push('|-----------|-------------|-------|');
-lines.push('| Node.js | 22.x | Required for eOffice, eDB, eApps, www |');
-lines.push('| Python | 3.10+ | Required for eVera, EoSim, EoStudio, eDB backend |');
-lines.push('| Go | 1.22+ | Required for eIPC |');
-lines.push('| GCC ARM | 13.x | Required for all firmware |');
-lines.push('| CMake | 3.20+ | Required for firmware builds |');
-lines.push('| Ninja | 1.11+ | Optional but recommended for firmware |');
-lines.push('');
-lines.push('---');
-lines.push('');
-
-// ── Release Binaries Table ────────────────────────────────────────────────
-lines.push('## Release Binaries');
-lines.push('');
-lines.push('| Artifact | Repo | Format | Platform | Architecture |');
-lines.push('|----------|------|--------|----------|--------------|');
-lines.push('| eos.elf | eos | ELF | Bare-metal | ARM Cortex-M |');
-lines.push('| eBoot.elf | eBoot | ELF | Bare-metal | ARM Cortex-M |');
-lines.push('| eAI.elf | eAI | ELF | eos RTOS | ARM Cortex-M55 |');
-lines.push('| eosllm.a | eosllm | Static lib | eos RTOS | ARM Cortex-M7 |');
-lines.push('| eNI.elf | eNI | ELF | eos RTOS | ARM Cortex-M4 |');
-lines.push('| health_band_neuro.elf | HEALTH-BAND-Neuro | ELF | Zephyr | nRF52840 |');
-lines.push('| eipc-linux-amd64 | eIPC | Binary | Linux | x86_64 |');
-lines.push('| eipc-linux-arm64 | eIPC | Binary | Linux | ARM64 |');
-lines.push('| eipc-windows-amd64.exe | eIPC | Binary | Windows | x86_64 |');
-lines.push('| eipc-darwin-amd64 | eIPC | Binary | macOS | x86_64 |');
-lines.push('| eVera-linux.AppImage | eVera | AppImage | Linux | x86_64 |');
-lines.push('| EoStudio-linux.AppImage | EoStudio | AppImage | Linux | x86_64 |');
-lines.push('| EoSim-linux.AppImage | EoSim | AppImage | Linux | x86_64 |');
-lines.push('| eApps/ | eApps | Web static | All browsers | — |');
-lines.push('| eOffice/ | eOffice | Web static | All browsers | — |');
-lines.push('');
-lines.push('---');
-lines.push('');
-lines.push('*Generated by [eos-stack-manifest](https://github.com/embeddedos-org/eos-stack-manifest)*');
-
-fs.writeFileSync('COVERAGE_REPORT.md', lines.join('\n'));
-console.log('Coverage report written to COVERAGE_REPORT.md');
-"
+        run: node scripts/generate-coverage-report.mjs
 
       - name: Write to job summary
         run: cat COVERAGE_REPORT.md >> $GITHUB_STEP_SUMMARY
@@ -757,7 +514,7 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
           path: COVERAGE_REPORT.md
           retention-days: 90
 
-  # ── 8. Manifest auto-update ─────────────────────────────────────────────────
+  # 8. Manifest auto-update
   update-manifest:
     name: Auto-Update Manifest
     needs: discover
@@ -774,7 +531,7 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
 
       - run: npm install
 
-      - name: Run auto-discovery (live update)
+      - name: Run auto-discovery
         run: node scripts/discover.mjs
         env:
           GH_TOKEN: ${{ env.GH_TOKEN }}
@@ -786,11 +543,11 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
           git config user.name "EoS Manifest Bot"
           git diff --quiet manifest.json build-matrix.json || (
             git add manifest.json build-matrix.json
-            git commit -m "chore: auto-update manifest [$(date -u +%Y-%m-%d)] from ${{ needs.discover.outputs.source_org }}"
+            git commit -m "chore: auto-update manifest [$(date -u +%Y-%m-%d)]"
             git push
           )
 
-  # ── 9. Release (on v* tag OR release=true dispatch) ─────────────────────────
+  # 9. Release (on v* tag OR release=true dispatch)
   release:
     name: Create Unified Release
     needs:
@@ -811,31 +568,31 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
 
       - run: npm install
 
-      - name: Download all build artifacts
+      - name: Download firmware artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: 'firmware-*'
+          pattern: firmware-*
           path: release-artifacts/firmware/
           merge-multiple: false
 
       - name: Download Python artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: 'python-*'
+          pattern: python-*
           path: release-artifacts/python/
           merge-multiple: false
 
       - name: Download Go artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: 'go-*'
+          pattern: go-*
           path: release-artifacts/go/
           merge-multiple: false
 
       - name: Download Web artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: 'web-*'
+          pattern: web-*
           path: release-artifacts/web/
           merge-multiple: false
 
@@ -852,7 +609,7 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
           RELEASE_TAG: ${{ github.ref_name }}
           SOURCE_ORG: ${{ needs.discover.outputs.source_org }}
 
-      - name: Append coverage & compatibility tables to release notes
+      - name: Append coverage tables to release notes
         run: |
           echo "" >> RELEASE.md
           cat release-artifacts/COVERAGE_REPORT.md >> RELEASE.md
@@ -862,9 +619,7 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
           cd release-artifacts/firmware
           for dir in */; do
             repo="${dir%/}"
-            if [ -d "$dir" ]; then
-              zip -r "../${repo}-firmware.zip" "$dir" 2>/dev/null || true
-            fi
+            [ -d "$dir" ] && zip -r "../${repo}-firmware.zip" "$dir" 2>/dev/null || true
           done
           cd ../..
 
@@ -873,9 +628,7 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
           cd release-artifacts/go
           for dir in */; do
             repo="${dir%/}"
-            if [ -d "$dir" ]; then
-              zip -r "../${repo}-binaries.zip" "$dir" 2>/dev/null || true
-            fi
+            [ -d "$dir" ] && zip -r "../${repo}-binaries.zip" "$dir" 2>/dev/null || true
           done
           cd ../..
 
@@ -884,9 +637,7 @@ console.log('Coverage report written to COVERAGE_REPORT.md');
           cd release-artifacts/web
           for dir in */; do
             repo="${dir%/}"
-            if [ -d "$dir" ]; then
-              zip -r "../${repo}-web.zip" "$dir" 2>/dev/null || true
-            fi
+            [ -d "$dir" ] && zip -r "../${repo}-web.zip" "$dir" 2>/dev/null || true
           done
           cd ../..
 
