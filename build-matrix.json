@@ -1,0 +1,31 @@
+{
+  "repos": [
+    "eos",
+    "eBoot",
+    "eAI",
+    "eDB",
+    "eIPC",
+    "eosllm",
+    "ebuild",
+    "EoSim",
+    "EoStudio",
+    "eVera",
+    "eBrowser",
+    "eCAD-Hardware-Products",
+    "eNI",
+    "HEALTH-BAND-Neuro",
+    "HealthKey-Ulta",
+    "eOffice",
+    "eApps",
+    "www.embeddedos.org",
+    "embeddedos-org.github.io"
+  ],
+  "total": 19,
+  "updated": "2026-06-01",
+  "note": "Auto-managed — do not edit manually. Add repos to EXCLUDE list in workflow to skip.",
+  "excluded": [
+    ".github",
+    "embeddedos-org",
+    "eos-stack-manifest"
+  ]
+}

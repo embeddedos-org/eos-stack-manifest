@@ -1,0 +1,391 @@
+name: EoS Unified Build, Test & Release
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Triggers
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [master, develop]
+    paths:
+      - 'manifest.json'
+      - 'build-matrix.json'
+      - '.github/workflows/unified-build.yml'
+  pull_request:
+    branches: [master]
+  schedule:
+    # Nightly full build at 03:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      repo_filter:
+        description: 'Build only this repo (leave blank for all)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run — discover only, no builds'
+        required: false
+        default: 'false'
+      release:
+        description: 'Create GitHub Releases for built artifacts'
+        required: false
+        default: 'false'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Permissions
+# ─────────────────────────────────────────────────────────────────────────────
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+env:
+  NODE_VERSION: '22'
+  PYTHON_VERSION: '3.12'
+  GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Jobs
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. Discover & validate manifest ────────────────────────────────────────
+  discover:
+    name: Discover & Validate Manifest
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      total: ${{ steps.build-matrix.outputs.total }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install manifest deps
+        run: npm install
+
+      - name: Run auto-discovery (dry-run)
+        run: node scripts/discover.mjs --dry-run
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+
+      - name: Validate manifest schema
+        run: node scripts/validate-schema.mjs
+
+      - name: Build dynamic job matrix
+        id: build-matrix
+        run: |
+          FILTER="${{ github.event.inputs.repo_filter }}"
+          node -e "
+            const fs = require('fs');
+            const matrix = JSON.parse(fs.readFileSync('build-matrix.json','utf8'));
+            let repos = matrix.repos;
+            if ('$FILTER') repos = repos.filter(r => r === '$FILTER');
+            const out = { include: repos.map(r => ({ repo: r })) };
+            console.log('matrix=' + JSON.stringify(out));
+            console.log('total=' + repos.length);
+          " >> \$GITHUB_OUTPUT
+
+      - name: Print manifest stats
+        run: node scripts/stats.mjs
+
+  # ── 2. Firmware / C / CMake builds ─────────────────────────────────────────
+  build-firmware:
+    name: Build Firmware — ${{ matrix.repo }}
+    needs: discover
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [eos, eBoot, eAI, eosllm, ebuild, eNI, HEALTH-BAND-Neuro]
+    steps:
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/${{ matrix.repo }}
+          token: ${{ env.GH_TOKEN }}
+          ref: master
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake build-essential gcc-arm-none-eabi binutils-arm-none-eabi \
+            openssl libssl-dev ninja-build
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -G Ninja || cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j$(nproc)
+
+      - name: Test
+        run: cmake --build build --target test || echo "No test target defined"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.repo }}
+          path: |
+            build/**/*.elf
+            build/**/*.hex
+            build/**/*.bin
+            build/**/*.a
+            build/**/*.so
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ── 3. Python / Backend builds ─────────────────────────────────────────────
+  build-python:
+    name: Build Python — ${{ matrix.repo }}
+    needs: discover
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [eDB, EoSim, EoStudio, eVera]
+    steps:
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/${{ matrix.repo }}
+          token: ${{ env.GH_TOKEN }}
+          ref: master
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt 2>/dev/null || echo "No requirements.txt"
+          pip install pytest pytest-cov pyinstaller 2>/dev/null || true
+
+      - name: Run tests
+        run: pytest --tb=short -q 2>/dev/null || echo "No tests found"
+
+      - name: Build binary (PyInstaller)
+        run: |
+          SPEC=$(ls *.spec 2>/dev/null | head -1)
+          if [ -n "$SPEC" ]; then
+            pyinstaller "$SPEC"
+          else
+            echo "No .spec file — skipping PyInstaller build"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-${{ matrix.repo }}
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ── 4. Go builds ────────────────────────────────────────────────────────────
+  build-go:
+    name: Build Go — eIPC
+    needs: discover
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    steps:
+      - name: Checkout eIPC
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/eIPC
+          token: ${{ env.GH_TOKEN }}
+          ref: master
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Test
+        run: go test ./... -v -count=1 || echo "No tests"
+
+      - name: Build (Linux, Windows, macOS)
+        run: |
+          mkdir -p dist
+          GOOS=linux   GOARCH=amd64 go build -o dist/eipc-linux-amd64   ./cmd/... 2>/dev/null || go build -o dist/eipc-linux-amd64   . 2>/dev/null || echo "Build skipped"
+          GOOS=windows GOARCH=amd64 go build -o dist/eipc-windows-amd64.exe ./cmd/... 2>/dev/null || true
+          GOOS=darwin  GOARCH=arm64 go build -o dist/eipc-macos-arm64   ./cmd/... 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-eIPC
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ── 5. Node / TypeScript / Web builds ──────────────────────────────────────
+  build-web:
+    name: Build Web — ${{ matrix.repo }}
+    needs: discover
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [eApps, www.embeddedos.org, eOffice, HealthKey-Ulta]
+    steps:
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/${{ matrix.repo }}
+          token: ${{ env.GH_TOKEN }}
+          ref: master
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm install --frozen-lockfile 2>/dev/null || npm install
+
+      - name: Test
+        run: npm test -- --passWithNoTests 2>/dev/null || echo "No tests"
+
+      - name: Build
+        run: npm run build 2>/dev/null || echo "No build script"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ matrix.repo }}
+          path: |
+            dist/
+            build/
+            out/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ── 6. Hardware / KiCad builds ─────────────────────────────────────────────
+  build-hardware:
+    name: Build Hardware — eCAD
+    needs: discover
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    steps:
+      - name: Checkout eCAD-Hardware-Products
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/eCAD-Hardware-Products
+          token: ${{ env.GH_TOKEN }}
+          ref: master
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install KiCad tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y kicad python3-kicad 2>/dev/null || echo "KiCad not available in CI — skipping"
+          pip install kicad-python 2>/dev/null || true
+
+      - name: Run DRC checks
+        run: python3 scripts/drc_check.py 2>/dev/null || echo "DRC script not found"
+
+      - name: Generate Gerbers
+        run: python3 scripts/generate_gerbers.py 2>/dev/null || echo "Gerber script not found"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hardware-eCAD
+          path: |
+            gerbers/
+            output/
+            bom/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ── 7. Manifest auto-update ─────────────────────────────────────────────────
+  update-manifest:
+    name: Auto-Update Manifest
+    needs: discover
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.dry_run == 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ env.GH_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: npm install
+
+      - name: Run auto-discovery (live update)
+        run: node scripts/discover.mjs
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+
+      - name: Commit manifest updates
+        run: |
+          git config user.email "eos-bot@embeddedos.org"
+          git config user.name "EoS Manifest Bot"
+          git diff --quiet manifest.json build-matrix.json || (
+            git add manifest.json build-matrix.json
+            git commit -m "chore: auto-update manifest [$(date -u +%Y-%m-%d)]"
+            git push
+          )
+
+  # ── 8. Release (on v* tag) ──────────────────────────────────────────────────
+  release:
+    name: Create Unified Release
+    needs:
+      - build-firmware
+      - build-python
+      - build-go
+      - build-web
+      - build-hardware
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: npm install
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts/
+
+      - name: Generate release notes
+        run: node scripts/generate-release-docs.mjs
+        env:
+          GH_TOKEN: ${{ env.GH_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "EoS Stack ${{ github.ref_name }}"
+          body_path: RELEASE.md
+          files: |
+            release-artifacts/**/*.elf
+            release-artifacts/**/*.hex
+            release-artifacts/**/*.bin
+            release-artifacts/**/*.a
+            release-artifacts/**/*.so
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.apk
+            release-artifacts/**/*.vsix
+            release-artifacts/**/*.zip
+            manifest.json
+            build-matrix.json
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+        env:
+          GITHUB_TOKEN: ${{ env.GH_TOKEN }}

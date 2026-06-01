@@ -1,0 +1,21 @@
+{
+  "source_org": "embeddedos-org",
+  "manifest_repo": "embeddedos-org/eos-stack-manifest",
+  "default_branch": "master",
+  "_comment": "This file tells the unified-build workflow which org contains the source repos. When you fork this manifest repo, this file travels with it automatically — no manual setup needed.",
+  "fork_mode": {
+    "enabled": true,
+    "description": "When forked, the unified-build workflow will build repos from source_org using the fork's workflow file. Set override_org to build from a different org."
+  },
+  "tiers": {
+    "1": "Core OS layer — EoS RTOS, eBoot, eAI, eDB, eIPC, eosllm",
+    "2": "Platform tools — EoSim, EoStudio, eVera, eBrowser, eCAD",
+    "3": "Application layer — eOffice, eApps, HEALTH-BAND-Neuro, HealthKey-Ulta, eNI",
+    "4": "Web & docs — www.embeddedos.org, embeddedos-org.github.io, eApps",
+    "5": "Meta — embeddedos-org profile, eos-stack-manifest"
+  },
+  "platforms": ["firmware", "rtos", "desktop", "mobile", "web", "ai", "hardware", "meta"],
+  "node_version": "22",
+  "python_version": "3.12",
+  "ci_runner_default": "ubuntu-latest"
+}
