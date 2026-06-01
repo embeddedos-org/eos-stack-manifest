@@ -1,24 +1,38 @@
 name: EoS Unified Build, Test & Release
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Triggers
+# HOW FORK SUPPORT WORKS
 # ─────────────────────────────────────────────────────────────────────────────
+# 1. Fork this repo to any GitHub org (e.g. my-company/eos-stack-manifest)
+# 2. Edit manifest-config.json → set "source_org" to your org name
+#    OR set "override_org" to build from a completely different org
+# 3. Push — the workflow reads source_org at runtime, never hardcodes it
+#
+# To build from the ORIGINAL embeddedos-org repos without forking those repos:
+#   Set "source_org": "embeddedos-org" in manifest-config.json
+#   Add GH_TOKEN secret with read access to embeddedos-org repos
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
     branches: [master, develop]
     paths:
       - 'manifest.json'
       - 'build-matrix.json'
+      - 'manifest-config.json'
       - '.github/workflows/unified-build.yml'
   pull_request:
     branches: [master]
   schedule:
-    # Nightly full build at 03:00 UTC
     - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       repo_filter:
         description: 'Build only this repo (leave blank for all)'
+        required: false
+        default: ''
+      source_org_override:
+        description: 'Override source org (leave blank to use manifest-config.json)'
         required: false
         default: ''
       dry_run:
@@ -29,10 +43,11 @@ on:
         description: 'Create GitHub Releases for built artifacts'
         required: false
         default: 'false'
+      tier:
+        description: 'Build only this tier (1-5, leave blank for all)'
+        required: false
+        default: ''
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Permissions
-# ─────────────────────────────────────────────────────────────────────────────
 permissions:
   contents: write
   packages: write
@@ -43,17 +58,17 @@ env:
   PYTHON_VERSION: '3.12'
   GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Jobs
-# ─────────────────────────────────────────────────────────────────────────────
 jobs:
 
-  # ── 1. Discover & validate manifest ────────────────────────────────────────
+  # ── 1. Resolve source org & validate manifest ───────────────────────────────
   discover:
     name: Discover & Validate Manifest
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      source_org: ${{ steps.resolve-org.outputs.source_org }}
+      matrix_firmware: ${{ steps.build-matrix.outputs.matrix_firmware }}
+      matrix_python: ${{ steps.build-matrix.outputs.matrix_python }}
+      matrix_web: ${{ steps.build-matrix.outputs.matrix_web }}
       total: ${{ steps.build-matrix.outputs.total }}
     steps:
       - uses: actions/checkout@v4
@@ -65,30 +80,94 @@ jobs:
       - name: Install manifest deps
         run: npm install
 
+      # ── Resolve which org to build from ─────────────────────────────────────
+      # Priority: workflow_dispatch input > manifest-config.json override_org > manifest-config.json source_org
+      - name: Resolve source org
+        id: resolve-org
+        run: |
+          DISPATCH_ORG="${{ github.event.inputs.source_org_override }}"
+          CONFIG_OVERRIDE=$(node -e "
+            const c = JSON.parse(require('fs').readFileSync('manifest-config.json','utf8'));
+            console.log(c.override_org || '');
+          ")
+          SOURCE_ORG=$(node -e "
+            const c = JSON.parse(require('fs').readFileSync('manifest-config.json','utf8'));
+            console.log(c.source_org || 'embeddedos-org');
+          ")
+
+          if [ -n "$DISPATCH_ORG" ]; then
+            FINAL_ORG="$DISPATCH_ORG"
+            echo "Using workflow_dispatch override: $FINAL_ORG"
+          elif [ -n "$CONFIG_OVERRIDE" ]; then
+            FINAL_ORG="$CONFIG_OVERRIDE"
+            echo "Using manifest-config.json override_org: $FINAL_ORG"
+          else
+            FINAL_ORG="$SOURCE_ORG"
+            echo "Using manifest-config.json source_org: $FINAL_ORG"
+          fi
+
+          echo "source_org=$FINAL_ORG" >> $GITHUB_OUTPUT
+          echo "SOURCE_ORG=$FINAL_ORG" >> $GITHUB_ENV
+
       - name: Run auto-discovery (dry-run)
         run: node scripts/discover.mjs --dry-run
         env:
           GH_TOKEN: ${{ env.GH_TOKEN }}
+          SOURCE_ORG: ${{ steps.resolve-org.outputs.source_org }}
 
       - name: Validate manifest schema
         run: node scripts/validate-schema.mjs
 
-      - name: Build dynamic job matrix
+      - name: Build dynamic job matrices
         id: build-matrix
         run: |
           FILTER="${{ github.event.inputs.repo_filter }}"
+          TIER="${{ github.event.inputs.tier }}"
           node -e "
             const fs = require('fs');
+            const manifest = JSON.parse(fs.readFileSync('manifest.json','utf8'));
             const matrix = JSON.parse(fs.readFileSync('build-matrix.json','utf8'));
-            let repos = matrix.repos;
-            if ('$FILTER') repos = repos.filter(r => r === '$FILTER');
-            const out = { include: repos.map(r => ({ repo: r })) };
-            console.log('matrix=' + JSON.stringify(out));
-            console.log('total=' + repos.length);
-          " >> \$GITHUB_OUTPUT
+
+            // Filter by tier if specified
+            const tierFilter = '$TIER';
+            const repoFilter = '$FILTER';
+
+            let allRepos = manifest.repos || [];
+            if (tierFilter) {
+              allRepos = allRepos.filter(r => String(r.tier) === tierFilter);
+            }
+            if (repoFilter) {
+              allRepos = allRepos.filter(r => r.name === repoFilter);
+            }
+
+            const firmware = allRepos.filter(r => ['firmware','rtos'].includes(r.platform)).map(r => r.name);
+            const python   = allRepos.filter(r => r.stack === 'python').map(r => r.name);
+            const web      = allRepos.filter(r => ['web','electron'].includes(r.stack)).map(r => r.name);
+
+            console.log('matrix_firmware=' + JSON.stringify({ include: firmware.map(r => ({ repo: r })) }));
+            console.log('matrix_python='   + JSON.stringify({ include: python.map(r => ({ repo: r })) }));
+            console.log('matrix_web='      + JSON.stringify({ include: web.map(r => ({ repo: r })) }));
+            console.log('total=' + allRepos.length);
+          " >> $GITHUB_OUTPUT
 
       - name: Print manifest stats
         run: node scripts/stats.mjs
+
+      - name: Print fork info
+        run: |
+          echo "============================================"
+          echo "  EoS Stack Manifest — Fork Info"
+          echo "============================================"
+          echo "  Manifest repo  : ${{ github.repository }}"
+          echo "  Source org     : ${{ steps.resolve-org.outputs.source_org }}"
+          echo "  Triggered by   : ${{ github.event_name }}"
+          echo "  Ref            : ${{ github.ref }}"
+          echo "============================================"
+          echo ""
+          echo "  To build from a different org, either:"
+          echo "  1. Set 'override_org' in manifest-config.json"
+          echo "  2. Pass 'source_org_override' in workflow_dispatch"
+          echo "============================================"
 
   # ── 2. Firmware / C / CMake builds ─────────────────────────────────────────
   build-firmware:
@@ -101,10 +180,10 @@ jobs:
       matrix:
         repo: [eos, eBoot, eAI, eosllm, ebuild, eNI, HEALTH-BAND-Neuro]
     steps:
-      - name: Checkout ${{ matrix.repo }}
+      - name: Checkout ${{ matrix.repo }} from ${{ needs.discover.outputs.source_org }}
         uses: actions/checkout@v4
         with:
-          repository: embeddedos-org/${{ matrix.repo }}
+          repository: ${{ needs.discover.outputs.source_org }}/${{ matrix.repo }}
           token: ${{ env.GH_TOKEN }}
           ref: master
 
@@ -147,10 +226,10 @@ jobs:
       matrix:
         repo: [eDB, EoSim, EoStudio, eVera]
     steps:
-      - name: Checkout ${{ matrix.repo }}
+      - name: Checkout ${{ matrix.repo }} from ${{ needs.discover.outputs.source_org }}
         uses: actions/checkout@v4
         with:
-          repository: embeddedos-org/${{ matrix.repo }}
+          repository: ${{ needs.discover.outputs.source_org }}/${{ matrix.repo }}
           token: ${{ env.GH_TOKEN }}
           ref: master
 
@@ -191,10 +270,10 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run != 'true' }}
     steps:
-      - name: Checkout eIPC
+      - name: Checkout eIPC from ${{ needs.discover.outputs.source_org }}
         uses: actions/checkout@v4
         with:
-          repository: embeddedos-org/eIPC
+          repository: ${{ needs.discover.outputs.source_org }}/eIPC
           token: ${{ env.GH_TOKEN }}
           ref: master
 
@@ -231,10 +310,10 @@ jobs:
       matrix:
         repo: [eApps, www.embeddedos.org, eOffice, HealthKey-Ulta]
     steps:
-      - name: Checkout ${{ matrix.repo }}
+      - name: Checkout ${{ matrix.repo }} from ${{ needs.discover.outputs.source_org }}
         uses: actions/checkout@v4
         with:
-          repository: embeddedos-org/${{ matrix.repo }}
+          repository: ${{ needs.discover.outputs.source_org }}/${{ matrix.repo }}
           token: ${{ env.GH_TOKEN }}
           ref: master
 
@@ -269,10 +348,10 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run != 'true' }}
     steps:
-      - name: Checkout eCAD-Hardware-Products
+      - name: Checkout eCAD-Hardware-Products from ${{ needs.discover.outputs.source_org }}
         uses: actions/checkout@v4
         with:
-          repository: embeddedos-org/eCAD-Hardware-Products
+          repository: ${{ needs.discover.outputs.source_org }}/eCAD-Hardware-Products
           token: ${{ env.GH_TOKEN }}
           ref: master
 
@@ -323,6 +402,7 @@ jobs:
         run: node scripts/discover.mjs
         env:
           GH_TOKEN: ${{ env.GH_TOKEN }}
+          SOURCE_ORG: ${{ needs.discover.outputs.source_org }}
 
       - name: Commit manifest updates
         run: |
@@ -330,7 +410,7 @@ jobs:
           git config user.name "EoS Manifest Bot"
           git diff --quiet manifest.json build-matrix.json || (
             git add manifest.json build-matrix.json
-            git commit -m "chore: auto-update manifest [$(date -u +%Y-%m-%d)]"
+            git commit -m "chore: auto-update manifest [$(date -u +%Y-%m-%d)] from ${{ needs.discover.outputs.source_org }}"
             git push
           )
 
@@ -364,11 +444,12 @@ jobs:
         env:
           GH_TOKEN: ${{ env.GH_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_ORG: ${{ needs.discover.outputs.source_org }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "EoS Stack ${{ github.ref_name }}"
+          name: "EoS Stack ${{ github.ref_name }} (source: ${{ needs.discover.outputs.source_org }})"
           body_path: RELEASE.md
           files: |
             release-artifacts/**/*.elf
@@ -385,6 +466,7 @@ jobs:
             release-artifacts/**/*.zip
             manifest.json
             build-matrix.json
+            manifest-config.json
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
         env:

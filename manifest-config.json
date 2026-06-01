@@ -3,9 +3,18 @@
   "manifest_repo": "embeddedos-org/eos-stack-manifest",
   "default_branch": "master",
   "_comment": "This file tells the unified-build workflow which org contains the source repos. When you fork this manifest repo, this file travels with it automatically — no manual setup needed.",
+  "override_org": "",
+  "_override_org_comment": "Set this to build from a DIFFERENT org than source_org. Leave empty to use source_org. Example: 'my-company' to build from my-company/eVera instead of embeddedos-org/eVera",
   "fork_mode": {
     "enabled": true,
-    "description": "When forked, the unified-build workflow will build repos from source_org using the fork's workflow file. Set override_org to build from a different org."
+    "description": "Fork this repo to any org. Set source_org to the org that owns the repos you want to build. Set override_org to force a different org at runtime.",
+    "how_to_fork": [
+      "1. Fork https://github.com/embeddedos-org/eos-stack-manifest to your org",
+      "2. Edit manifest-config.json: set source_org to your org name",
+      "3. Add GH_TOKEN secret with read access to your repos",
+      "4. Push to master — CI will build from your org automatically",
+      "5. To build from embeddedos-org repos without forking them, keep source_org as embeddedos-org and add a GH_TOKEN with read access to embeddedos-org"
+    ]
   },
   "tiers": {
     "1": "Core OS layer — EoS RTOS, eBoot, eAI, eDB, eIPC, eosllm",
