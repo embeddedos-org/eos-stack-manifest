@@ -721,8 +721,8 @@ jobs:
           token: ${{ env.GH_TOKEN }}
           ref: master
           sparse-checkout: |
-            firmware/health-band-neuro
-            firmware/shared
+            devices/health-band-neuro/firmware
+            devices/health-band-neuro/hardware
           sparse-checkout-cone-mode: false
       - name: Install build tools
         run: |
@@ -730,15 +730,15 @@ jobs:
           sudo apt-get install -y cmake build-essential gcc-arm-none-eabi binutils-arm-none-eabi ninja-build lcov gcovr 2>/dev/null || true
       - name: Build HEALTH-BAND-Neuro firmware
         run: |
-          cd firmware/health-band-neuro
+          cd devices/health-band-neuro/firmware
           echo "## Build Firmware -- HEALTH-BAND-Neuro" >> $GITHUB_STEP_SUMMARY
           if [ -f CMakeLists.txt ]; then
             cmake -B build -DCMAKE_BUILD_TYPE=Release 2>/dev/null && \
               cmake --build build --config Release 2>/dev/null && \
-              echo "| HEALTH-BAND-Neuro | ✓ CMake build passed | firmware/health-band-neuro |" >> $GITHUB_STEP_SUMMARY || \
-              echo "| HEALTH-BAND-Neuro | ⚠ CMake build (stub sources) | firmware/health-band-neuro |" >> $GITHUB_STEP_SUMMARY
+              echo "| HEALTH-BAND-Neuro | ✓ CMake build passed | devices/health-band-neuro/firmware |" >> $GITHUB_STEP_SUMMARY || \
+              echo "| HEALTH-BAND-Neuro | ⚠ CMake build (stub sources) | devices/health-band-neuro/firmware |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| HEALTH-BAND-Neuro | ✓ Source validated (no CMakeLists.txt at root) | firmware/health-band-neuro |" >> $GITHUB_STEP_SUMMARY
+            echo "| HEALTH-BAND-Neuro | ✓ Source validated (no CMakeLists.txt at root) | devices/health-band-neuro/firmware |" >> $GITHUB_STEP_SUMMARY
           fi
           # Run tests if available
           if [ -d tests ]; then
@@ -749,7 +749,7 @@ jobs:
         if: always()
         with:
           name: firmware-health-band-neuro
-          path: firmware/health-band-neuro/build/
+          path: devices/health-band-neuro/firmware/build/
           if-no-files-found: ignore
           retention-days: 90
 
@@ -768,6 +768,7 @@ jobs:
           ref: master
           sparse-checkout: |
             apps/mobile-app/health-key-ultra
+            apps/mobile-app/health-band-neuro
             apps/mobile
           sparse-checkout-cone-mode: false
       - uses: actions/setup-node@v4
@@ -776,6 +777,17 @@ jobs:
       - name: Install & Test HealthKey-Ulta
         run: |
           echo "## Build Mobile -- HealthKey-Ulta" >> $GITHUB_STEP_SUMMARY
+          # Check if mobile dirs are empty scaffolds (only .gitignore)
+          HKU_FILES=$(find apps/mobile-app/health-key-ultra -type f 2>/dev/null | grep -v '.gitignore' | wc -l)
+          HBN_FILES=$(find apps/mobile-app/health-band-neuro -type f 2>/dev/null | grep -v '.gitignore' | wc -l)
+          if [ "$HKU_FILES" -eq 0 ] && [ "$HBN_FILES" -eq 0 ]; then
+            echo "## HealthKey-Ulta Mobile Build" >> $GITHUB_STEP_SUMMARY
+            echo "| Product | Status | Notes |" >> $GITHUB_STEP_SUMMARY
+            echo "|---------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| HealthKey-Ulta | ⏳ Scaffold only | Mobile app not yet implemented |" >> $GITHUB_STEP_SUMMARY
+            echo "| HEALTH-BAND-Neuro Mobile | ⏳ Scaffold only | Mobile app not yet implemented |" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
           # Try mobile-app/health-key-ultra first, then apps/mobile
           APP_DIR=""
           if [ -f apps/mobile-app/health-key-ultra/package.json ]; then
