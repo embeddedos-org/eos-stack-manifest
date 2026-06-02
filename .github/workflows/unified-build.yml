@@ -202,7 +202,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ matrix.repo }}
           path: |
@@ -216,7 +216,7 @@ jobs:
           retention-days: 90
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-firmware-${{ matrix.repo }}
@@ -283,7 +283,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-${{ matrix.repo }}
           path: dist/
@@ -291,7 +291,7 @@ jobs:
           retention-days: 90
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-python-${{ matrix.repo }}
@@ -353,7 +353,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-eIPC
           path: dist/
@@ -361,7 +361,7 @@ jobs:
           retention-days: 90
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-go-eIPC
@@ -415,7 +415,7 @@ jobs:
         run: npm run build 2>/dev/null || echo "No build script"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-${{ matrix.repo }}
           path: |
@@ -426,7 +426,7 @@ jobs:
           retention-days: 90
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-web-${{ matrix.repo }}
@@ -690,7 +690,7 @@ jobs:
 
       # ── 13. Upload all artifacts ─────────────────────────────────────────
       - name: Upload Hardware CAD Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hardware-cad-eCAD
           path: |
@@ -699,7 +699,7 @@ jobs:
           retention-days: 90
 
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-hardware-cad
@@ -744,7 +744,7 @@ jobs:
             python3 -m pytest tests/ -v --tb=short 2>/dev/null || echo "No Python tests"
           fi
       - name: Upload HEALTH-BAND-Neuro artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: firmware-health-band-neuro
@@ -790,7 +790,7 @@ jobs:
             echo "| HealthKey-Ulta | ✓ Source validated (no package.json found) | apps/mobile-app |" >> $GITHUB_STEP_SUMMARY
           fi
       - name: Upload HealthKey-Ulta artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mobile-healthkey-ulta
@@ -876,7 +876,7 @@ jobs:
           fi
 
       - name: Upload mobile artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-${{ matrix.repo }}
           path: ${{ matrix.mobile_dir }}/dist/
@@ -885,7 +885,7 @@ jobs:
 
       - name: Upload mobile coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-mobile-${{ matrix.repo }}
           path: |
@@ -981,7 +981,7 @@ jobs:
           fi
 
       - name: Upload extension artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: browser-ext-${{ matrix.repo }}
           path: ${{ matrix.ext_dir }}/dist/
@@ -1046,7 +1046,7 @@ jobs:
           echo "VSIX artifact ready" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vscode-ext-eVera
           path: vscode-extension/dist/
@@ -1109,7 +1109,7 @@ jobs:
           ls -la dist/ 2>/dev/null
 
       - name: Upload Electron artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: electron-desktop-eVera
           path: electron/dist/
@@ -1196,7 +1196,7 @@ jobs:
 
       - name: Upload simulation results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: simulation-${{ matrix.repo }}
           path: |
@@ -1257,7 +1257,7 @@ jobs:
           cat RELEASE_TABLES.md >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-summary-report
           path: |
