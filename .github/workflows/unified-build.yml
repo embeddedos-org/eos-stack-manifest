@@ -90,7 +90,7 @@ jobs:
 
       - name: Build job matrices
         id: build-matrix
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
